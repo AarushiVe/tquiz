@@ -1,7 +1,11 @@
+# app/solver/browser.py
 import httpx
 from playwright.async_api import async_playwright
 
-async def fetch_without_js(url: str) -> str:
+# ----------------------------------------
+# Renamed for compatibility with logic.py
+# ----------------------------------------
+async def fetch_no_js(url: str) -> str:
     async with httpx.AsyncClient() as client:
         r = await client.get(url)
         r.raise_for_status()
@@ -13,28 +17,22 @@ async def fetch_with_js(url: str) -> str:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
-            await page.goto(url, timeout=15000)
-            content = await page.content()
+            await page.goto(url, timeout=20000, wait_until="networkidle")
+            html = await page.content()
             await browser.close()
-            return content
-    except Exception:
+            return html
+    except Exception as e:
+        print("JS fetch failed:", e)
         return None
 
 
 async def fetch_html(url: str) -> str:
-    # 1. Try simple GET
-    html = await fetch_without_js(url)
+    """Try static first, fallback to JS if script-like content is detected."""
+    html = await fetch_no_js(url)
 
-    # If page includes <script> that builds next content → try JS
-    if (
-        "atob(" in html
-        or "document.querySelector" in html
-        or "innerHTML" in html
-        or "script>" in html
-        or "URLSearchParams" in html
-    ):
-        rendered = await fetch_with_js(url)
-        if rendered:
-            return rendered
+    if any(k in html for k in ["atob(", "URLSearchParams", "innerHTML", "<script"]):
+        js = await fetch_with_js(url)
+        if js:
+            return js
 
     return html

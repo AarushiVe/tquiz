@@ -1,38 +1,45 @@
 # app/solver/browser.py
 import httpx
 from playwright.async_api import async_playwright
+import logging
 
-# ----------------------------------------
-# Renamed for compatibility with logic.py
-# ----------------------------------------
-async def fetch_no_js(url: str) -> str:
-    async with httpx.AsyncClient() as client:
+logger = logging.getLogger("solver.browser")
+
+
+async def fetch_without_js(url: str, timeout: float = 15.0) -> str:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.get(url)
         r.raise_for_status()
         return r.text
 
 
-async def fetch_with_js(url: str) -> str:
+async def fetch_with_js(url: str, timeout: float = 15_000) -> str | None:
+    """
+    Use Playwright to render page if necessary.
+    Returns None on failure (so caller can fall back).
+    """
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
-            await page.goto(url, timeout=20000, wait_until="networkidle")
-            html = await page.content()
+            await page.goto(url, timeout=timeout)
+            content = await page.content()
             await browser.close()
-            return html
+            return content
     except Exception as e:
-        print("JS fetch failed:", e)
+        logger.warning("JS render failed for %s: %s", url, e)
         return None
 
 
 async def fetch_html(url: str) -> str:
-    """Try static first, fallback to JS if script-like content is detected."""
-    html = await fetch_no_js(url)
-
-    if any(k in html for k in ["atob(", "URLSearchParams", "innerHTML", "<script"]):
-        js = await fetch_with_js(url)
-        if js:
-            return js
-
+    """
+    Attempt to fetch without JS first. If the result looks like it requires JS
+    (atob, inline script building DOM, URLSearchParams etc.) retry with Playwright.
+    """
+    html = await fetch_without_js(url)
+    hint_tokens = ("atob(", "URLSearchParams", "document.querySelector", "innerHTML", "<script")
+    if any(tok in html for tok in hint_tokens):
+        rendered = await fetch_with_js(url)
+        if rendered:
+            return rendered
     return html

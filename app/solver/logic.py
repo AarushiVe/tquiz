@@ -1,6 +1,6 @@
+# app/solver/logic.py
 import logging
 import httpx
-from bs4 import BeautifulSoup
 
 from .browser import fetch_no_js, fetch_with_js
 from .parser import extract_question_and_payload
@@ -9,27 +9,26 @@ logger = logging.getLogger("solver")
 
 
 async def solve_single_phase(email: str, secret: str, url: str, phase: int):
-    """
-    Phase 1 = simple static HTML
-    Phase 2+ = requires JS-rendered HTML
-    """
     logger.info(f"Solving phase at: {url}")
 
-    # ---- key fix: use JS in Phase >=2 ----
+    # Phase rule:
+    # Phase 1 → static fetch
+    # Phase 2+ → requires JS (because content is injected via atob())
     if phase == 1:
         html = await fetch_no_js(url)
     else:
         html = await fetch_with_js(url)
+        if not html:
+            logger.error("JS fetch failed — falling back to no-JS")
+            html = await fetch_no_js(url)
 
     result = extract_question_and_payload(html, url)
-
     submit_url = result.get("submit_url")
 
     if not submit_url:
         logger.error("Submit URL not found. HTML snippet:\n" + result["raw_html_snippet"])
         raise Exception("Submit URL not found")
 
-    # Find answer
     answer = result.get("secret") or secret
 
     payload = {
@@ -44,8 +43,7 @@ async def solve_single_phase(email: str, secret: str, url: str, phase: int):
         r.raise_for_status()
         data = r.json()
 
-    next_url = data.get("next")
-    return next_url
+    return data.get("next")
 
 
 async def solve_quiz_chain(email: str, secret: str, start_url: str):

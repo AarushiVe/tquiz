@@ -27,7 +27,8 @@ async def solve_single_phase(email: str, secret: str, url: str, phase: int) -> s
         # Helpful debug: log snippet and raise
         snippet = info.get("raw_html_snippet", "")[:1200]
         logger.error("Submit URL not found. HTML snippet (truncated):\n%s", snippet)
-        raise Exception("Submit URL not found — parser failed")
+        global_submit = "https://tds-llm-analysis.s-anand.net/submit"
+        submit_url = global_submit
 
     # Determine answer: prefer secret scraped; if not, use provided secret
     answer_value = info.get("secret") or secret or ""

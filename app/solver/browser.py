@@ -1,20 +1,23 @@
 import httpx
-import os
+import logging
+
+logger = logging.getLogger("browser")
+
 
 async def render_page(url: str) -> str:
-    # In production: use plain HTTP GET
-    if os.getenv("RENDER"):
-        async with httpx.AsyncClient() as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            return r.text
+    """
+    On Render, Playwright is unavailable. So we always fall back
+    to simple HTTP GET. This still works for all phases because
+    the server returns enough HTML without JS.
+    """
+    try:
+        # Simple GET
+        logger.info(f"Fetching URL without JS: {url}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.text
 
-    # Local debugging: real Playwright
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(url, wait_until="networkidle")
-        html = await page.content()
-        await browser.close()
-        return html
+    except Exception as e:
+        logger.error(f"Fallback fetch failed: {e}")
+        raise

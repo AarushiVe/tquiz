@@ -1,60 +1,83 @@
 # app/solver/logic.py
 import logging
 import httpx
-
-from .browser import fetch_no_js, fetch_with_js
+from .browser import fetch_html
 from .parser import extract_question_and_payload
 
 logger = logging.getLogger("solver")
+logging.basicConfig(level=logging.INFO)
 
 
-async def solve_single_phase(email: str, secret: str, url: str, phase: int):
-    logger.info(f"Solving phase at: {url}")
+async def solve_single_phase(email: str, secret: str, url: str, phase: int) -> str | None:
+    """
+    Visit `url`, parse submit target and secret, submit JSON and return next_url if present.
+    phase param kept for logging and future heuristics.
+    """
+    logger.info("Solving phase %s at: %s", phase, url)
+    html = await fetch_html(url)
+    info = extract_question_and_payload(html, url)
 
-    # Phase rule:
-    # Phase 1 → static fetch
-    # Phase 2+ → requires JS (because content is injected via atob())
-    if phase == 1:
-        html = await fetch_no_js(url)
-    else:
-        html = await fetch_with_js(url)
-        if not html:
-            logger.error("JS fetch failed — falling back to no-JS")
-            html = await fetch_no_js(url)
+    logger.info("Parser result: %s", {
+        "submit_url": info.get("submit_url"),
+        "secret_found": bool(info.get("secret"))
+    })
 
-    result = extract_question_and_payload(html, url)
-    submit_url = result.get("submit_url")
-
+    submit_url = info.get("submit_url")
     if not submit_url:
-        logger.error("Submit URL not found. HTML snippet:\n" + result["raw_html_snippet"])
-        raise Exception("Submit URL not found")
+        # Helpful debug: log snippet and raise
+        snippet = info.get("raw_html_snippet", "")[:1200]
+        logger.error("Submit URL not found. HTML snippet (truncated):\n%s", snippet)
+        raise Exception("Submit URL not found — parser failed")
 
-    answer = result.get("secret") or secret
+    # Determine answer: prefer secret scraped; if not, use provided secret
+    answer_value = info.get("secret") or secret or ""
 
     payload = {
         "email": email,
         "secret": secret,
         "url": url,
-        "answer": answer,
+        "answer": answer_value,
     }
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(submit_url, json=payload)
-        r.raise_for_status()
-        data = r.json()
+    # Post payload
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(submit_url, json=payload)
+        try:
+            resp.raise_for_status()
+        except Exception as e:
+            # log resp body for debugging
+            logger.error("POST to %s failed: %s - body: %s", submit_url, e, resp.text)
+            raise
 
-    return data.get("next")
+        try:
+            data = resp.json()
+        except Exception:
+            logger.warning("Response is not JSON, returning None. raw=%s", resp.text)
+            return None
+
+    # Next URL may exist in 'url' or 'next' or 'next_url'
+    next_url = data.get("url") or data.get("next") or data.get("next_url")
+    logger.info("POST response: correct=%s next=%s", data.get("correct"), next_url)
+    return next_url
 
 
-async def solve_quiz_chain(email: str, secret: str, start_url: str):
-    current_url = start_url
+async def solve_quiz_chain(email: str, secret: str, start_url: str) -> dict:
+    """
+    Loop through the quiz chain until no next URL returned.
+    Returns final page.
+    """
+    current = start_url
     phase = 1
+    visited = set()
 
     while True:
-        next_url = await solve_single_phase(email, secret, current_url, phase)
+        if current in visited:
+            logger.warning("URL loop detected, stopping: %s", current)
+            return {"final": current}
+        visited.add(current)
 
+        next_url = await solve_single_phase(email, secret, current, phase)
         if not next_url:
-            return {"final": current_url}
-
-        current_url = next_url
+            return {"final": current}
+        current = next_url
         phase += 1

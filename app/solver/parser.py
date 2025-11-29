@@ -1,13 +1,14 @@
+# app/solver/parser.py
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urlparse, urljoin
 
 def extract_question_and_payload(html: str, page_url: str):
     soup = BeautifulSoup(html, "html.parser")
 
-    # page origin, like https://tds-llm-analysis.s-anand.net
-    origin = page_url.split("/project2")[0].split("/demo")[0]
+    # Detect base origin like: https://tds-llm-analysis.s-anand.net
+    parsed = urlparse(page_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
 
-    # Try to detect submit automatically
     submit_url = None
 
     # Case 1: explicit <a href="/submit">
@@ -15,26 +16,26 @@ def extract_question_and_payload(html: str, page_url: str):
     if el:
         submit_url = origin + "/submit"
 
-    # Case 2: detect "/submit" anywhere in HTML
+    # Case 2: detect '/submit' text anywhere in HTML
     if not submit_url and "/submit" in html:
         submit_url = origin + "/submit"
 
-    # Case 3: project2 pages → always use origin/submit
-    if not submit_url:
+    # Case 3: project2 pages always use origin/submit
+    if not submit_url and "project2" in page_url:
         submit_url = origin + "/submit"
 
-    # Extract secret if shown (demo only)
+    # Extract secret if present (demo pages only)
     secret = None
     pre = soup.find("pre")
     if pre and "secret" in pre.text:
         try:
             after = pre.text.split("secret")[1]
             secret = after.split('"')[1]
-        except Exception:
+        except:
             pass
 
     return {
         "submit_url": submit_url,
         "secret": secret,
-        "raw_html_snippet": html[:2000]
+        "raw_html_snippet": html[:2000],
     }

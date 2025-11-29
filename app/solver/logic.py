@@ -2,7 +2,7 @@ import httpx
 import logging
 from urllib.parse import urlparse
 
-from app.solver.browser import fetch_html
+from .browser import fetch_html
 from app.solver.parser import extract_question_and_payload
 
 log = logging.getLogger("solver")

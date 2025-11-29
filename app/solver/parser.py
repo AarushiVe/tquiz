@@ -3,30 +3,29 @@ from urllib.parse import urljoin
 
 def extract_question_and_payload(html: str, page_url: str):
     soup = BeautifulSoup(html, "html.parser")
+    base = page_url.split("/demo")[0]
 
-    # ---- 1. Detect /submit ----
-    submit_url = None
+    # Detect submit
+    submit_el = soup.find("a", href="/submit")
+    if submit_el:
+        submit_url = base + "/submit"
+    else:
+        if "/submit" in html:
+            submit_url = base + "/submit"
+        else:
+            submit_url = None
 
-    # Look for literal /submit anywhere
-    if "/submit" in html:
-        submit_url = urljoin(page_url, "/submit")
-
-    # ---- 2. Extract secret ----
+    # Secret extraction
     secret = None
     pre = soup.find("pre")
     if pre:
         txt = pre.text
         if "secret" in txt:
-            try:
-                secret = txt.split('"secret"')[1]
-                secret = secret.split("\n")[0]
-                secret = secret.replace(":", "").replace(",", "")
-                secret = secret.strip().strip('"')
-            except:
-                secret = None
+            after = txt.split("secret")[1]
+            secret = after.split("\"")[1]
 
     return {
         "submit_url": submit_url,
         "secret": secret,
-        "raw_html_snippet": html[:2000]
+        "raw_html_snippet": html[:2000],
     }

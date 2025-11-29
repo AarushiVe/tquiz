@@ -15,6 +15,7 @@ async def handle_quiz(req: QuizRequest):
     result = await solve_quiz_chain(
         email=req.email,
         secret=req.secret,
-        url=req.url
-    )
+        start_url=req.url
+)
+
     return {"status": "done", "result": result}

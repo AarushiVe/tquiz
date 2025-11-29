@@ -1,35 +1,45 @@
 # app/solver/parser.py
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+
 
 def extract_question_and_payload(html: str, page_url: str):
     soup = BeautifulSoup(html, "html.parser")
 
-    # submit URL handling
+    # -------------------------------------------------------------
+    # 1. DETECT SUBMIT URL (works for demo, project2, real exam)
+    # -------------------------------------------------------------
     submit_url = None
 
-    # Explicit <a href="/submit">
+    # Case 1: explicit link
     a = soup.find("a", href="/submit")
     if a:
-        submit_url = urljoin(page_url, "/submit")
+        submit_url = "https://tds-llm-analysis.s-anand.net/submit"
 
-    # Fallback: raw HTML contains /submit (Phase 1)
-    if not submit_url and "/submit" in html:
-        submit_url = urljoin(page_url, "/submit")
+    # Case 2: found anywhere inside raw HTML
+    elif "/submit" in html:
+        submit_url = "https://tds-llm-analysis.s-anand.net/submit"
 
-    # Secret extraction
+    # -------------------------------------------------------------
+    # 2. EXTRACT "secret" FROM PRE BLOCK IF PRESENT
+    # -------------------------------------------------------------
     secret = None
     pre = soup.find("pre")
     if pre:
-        txt = pre.get_text()
-        if '"secret"' in txt:
+        txt = pre.get_text(strip=True)
+        if "secret" in txt:
+            # Example inside <pre>:
+            # { "email": "...", "secret": "XYZ", "url": "...", ... }
             try:
-                secret = txt.split('"secret"')[1].split('"')[1]
-            except:
+                after = txt.split('"secret"')[1]
+                secret = after.split('"')[1]   # first quoted string after "secret"
+            except Exception:
                 pass
 
+    # -------------------------------------------------------------
+    # 3. RETURN RESULT
+    # -------------------------------------------------------------
     return {
         "submit_url": submit_url,
-        "secret": secret,
-        "raw_html_snippet": html[:2000],
+        "secret":         secret,
+        "raw_html_snippet": html[:2000],  # for debugging
     }

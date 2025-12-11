@@ -1,9 +1,9 @@
 import asyncio
 import time
-from browser import get_rendered_html
-from solver.parser import extract_question
-from solver.data_ops import compute_answer
-from utils.http import submit_answer
+from app.browser import get_rendered_html
+from app.solver.parser import extract_question
+from app.solver.data_ops import compute_answer
+from app.utils.http import submit_answer
 
 async def solve_quiz(task):
     start = time.time()

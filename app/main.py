@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from logic import solve_quiz
+from app.logic import solve_quiz
 
 SECRET = "YOUR_SECRET"
 
